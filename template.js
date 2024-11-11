@@ -11,6 +11,10 @@ const getContainerVersion = require('getContainerVersion');
 const isLoggingEnabled = determinateIsLoggingEnabled();
 const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
 
+if (!data.documentId) {
+  return null;
+}
+
 return getResponseBody().then(mapResponse);
 
 function getOptions() {
