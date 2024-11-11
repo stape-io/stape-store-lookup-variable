@@ -1,4 +1,6 @@
 homepage: "https://stape.io/"
 versions:
+  - sha: 7c57ac8b1850a28921b4732794e9766890bce5ef
+    changeNotes: Blocked requests without Document ID.
   - sha: 34c3a056042faf21858e5292cc6a485197f82c5d
     changeNotes: Initial release.
