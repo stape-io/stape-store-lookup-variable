@@ -11,7 +11,7 @@ const getContainerVersion = require('getContainerVersion');
 const isLoggingEnabled = determinateIsLoggingEnabled();
 const traceId = isLoggingEnabled ? getRequestHeader('trace-id') : undefined;
 
-if (!data.documentId) {
+if (data.lookupType == "document" && !data.documentId) {
   return null;
 }
 
