@@ -31,13 +31,13 @@ ___TEMPLATE_PARAMETERS___
     "radioItems": [
       {
         "value": "document",
-        "displayValue": "Document Path",
-        "help": "Look up a document by specifying the document ID"
+        "displayValue": "Document ID",
+        "help": "Look up a document by specifying the Document ID."
       },
       {
         "value": "query",
         "displayValue": "Query",
-        "help": "Look up a document within a store where the document meets the specified query criteria. If multiple documents are returned from the query, only the first document is used."
+        "help": "Search the Store for a document matching the specified query criteria.  \n\u003cbr/\u003e\nIf multiple documents match, only the first result will be used."
       }
     ],
     "simpleValueType": true,
@@ -138,7 +138,7 @@ ___TEMPLATE_PARAMETERS___
   },
   {
     "type": "GROUP",
-    "name": "settings",
+    "name": "moreSettingsGroup",
     "groupStyle": "ZIPPY_OPEN",
     "subParams": [
       {
@@ -146,17 +146,32 @@ ___TEMPLATE_PARAMETERS___
         "name": "documentPath",
         "displayName": "Key Path",
         "simpleValueType": true,
-        "help": "The path to the desired field within the specified document.\n\u003cbr\u003e\u003cbr\u003e\nFor example, if the specified document is {key1: \u0027value1\u0027}, then a Key Path of key1 will return value1."
+        "help": "The path to the desired field within the specified document.\n\u003cbr/\u003e\u003cbr/\u003e\nFor example, if the specified document is\n\u003cbr/\u003e\n\u003ci\u003e{ key1: \"value1\" }\u003c/i\u003e\n\u003cbr/\u003e\nthen a Key Path of \u003ci\u003ekey1\u003c/i\u003e will return \u003ci\u003e\"value1\"\u003c/i\u003e."
       },
       {
         "type": "CHECKBOX",
         "name": "storeResponse",
         "checkboxText": "Store the result in cache",
         "simpleValueType": true,
-        "help": "Store the query result in Template Storage. If the query parameters match an existing cache, the result will be retrieved from there."
+        "help": "Store the response in Template Storage.  \n\u003cbr/\u003e\nIf a request is made with identical parameters, the cached response (if available) will be reused instead of sending a new request."
       }
     ],
     "displayName": "More Settings"
+  },
+  {
+    "type": "GROUP",
+    "name": "stapeStoreSettingsGroup",
+    "displayName": "Stape Store Settings",
+    "groupStyle": "ZIPPY_OPEN_ON_PARAM",
+    "subParams": [
+      {
+        "type": "TEXT",
+        "name": "collectionName",
+        "displayName": "Collection Name",
+        "simpleValueType": true,
+        "help": "The name of the collection on the Stape Store that contains (or will contain) the document with the data.\n\u003cbr/\u003e\u003cbr/\u003e\nIf not set, the \u003ci\u003edefault\u003c/i\u003e Collection Name will be used."
+      }
+    ]
   },
   {
     "displayName": "Logs Settings",
@@ -271,6 +286,7 @@ const getRequestHeader = require('getRequestHeader');
 const getContainerVersion = require('getContainerVersion');
 const makeString = require('makeString');
 const getTimestampMillis = require('getTimestampMillis');
+const getType = require('getType');
 const BigQuery = require('BigQuery');
 
 /*==============================================================================
@@ -278,38 +294,21 @@ const BigQuery = require('BigQuery');
 
 const traceId = getRequestHeader('trace-id');
 
-if (data.lookupType == 'document' && !data.documentId) {
+if (data.lookupType === 'document' && !data.documentId) {
   return null;
 }
 
-return getResponseBody().then(mapResponse);
+return lookupInStore(data).then(mapResponse);
 
 /*==============================================================================
   Vendor related functions
 ==============================================================================*/
 
-function mapResponse(bodyString) {
-  const body = JSON.parse(bodyString);
-  let document = body && body.length > 0 ? body[0] : {};
-  document = document.data || {};
-
-  if (!data.documentPath) return document;
-
-  const keys = data.documentPath.trim().split('.');
-  let value = document;
-  for (let i = 0; i < keys.length; i++) {
-    const key = keys[i];
-    if (!value || !key) break;
-    value = value[key];
-  }
-
-  return value;
-}
-
-function getStoreUrl() {
+function getStoreBaseUrl(data) {
   const containerIdentifier = getRequestHeader('x-gtm-identifier');
   const defaultDomain = getRequestHeader('x-gtm-default-domain');
   const containerApiKey = getRequestHeader('x-gtm-api-key');
+  const collectionPath = 'collections/' + enc(data.collectionName || 'default') + '/documents';
 
   return (
     'https://' +
@@ -318,41 +317,56 @@ function getStoreUrl() {
     enc(defaultDomain) +
     '/stape-api/' +
     enc(containerApiKey) +
-    '/v1/store'
+    '/v2/store/' +
+    collectionPath
   );
 }
 
-function getOptions() {
-  return { method: 'POST', headers: { 'Content-Type': 'application/json' } };
+function getDocumentUrl(data, documentId) {
+  const storeBaseUrl = getStoreBaseUrl(data);
+  return storeBaseUrl + '/' + enc(documentId);
 }
 
-function getPostBody() {
-  if (data.lookupType === 'document') {
-    return {
-      key: data.documentId,
-      limit: 1
-    };
-  }
+function getOptions(data) {
+  const optionsByLookupType = {
+    document: { method: 'GET' },
+    query: { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+  };
 
-  let filters = [];
+  return optionsByLookupType[data.lookupType];
+}
 
-  for (let i = 0; i < data.queryConditions.length; i++) {
-    const condition = data.queryConditions[i];
+function getLookupByQueryBody(data) {
+  const filterConditions = [];
 
-    filters.push([condition.field, condition.operator, condition.value]);
+  if (data.queryConditions) {
+    data.queryConditions.forEach((filterCondition) => {
+      filterConditions.push({
+        field: filterCondition.field,
+        operator: filterCondition.operator,
+        value: filterCondition.value
+      });
+    });
   }
 
   return {
-    data: filters,
-    limit: 1
+    filter: {
+      operator: 'and',
+      conditions: filterConditions
+    },
+    pagination: {
+      limit: 1
+    }
   };
 }
 
-function getResponseBody() {
-  const url = getStoreUrl();
-  const options = getOptions();
-  const postBody = getPostBody();
-  const cacheKey = data.storeResponse ? sha256Sync(url + JSON.stringify(postBody)) : '';
+function lookupInStore(data) {
+  const url =
+    data.lookupType === 'document' ? getDocumentUrl(data, data.documentId) : getStoreBaseUrl(data);
+  const options = getOptions(data);
+  const body = data.lookupType === 'query' ? getLookupByQueryBody(data) : undefined;
+  const bodyStrigified = body ? JSON.stringify(body) : undefined;
+  const cacheKey = data.storeResponse ? sha256Sync(url + bodyStrigified || '') : '';
 
   if (data.storeResponse) {
     const cachedValue = templateDataStorage.getItemCopy(cacheKey);
@@ -366,10 +380,10 @@ function getResponseBody() {
     EventName: 'StoreRead',
     RequestMethod: options.method,
     RequestUrl: url,
-    RequestBody: postBody
+    RequestBody: body
   });
 
-  return sendHttpRequest(url, options, JSON.stringify(postBody)).then((response) => {
+  return sendHttpRequest(url, options, bodyStrigified).then((response) => {
     log({
       Name: 'StapeStore',
       Type: 'Response',
@@ -384,6 +398,39 @@ function getResponseBody() {
 
     return response.body;
   });
+}
+
+function getDocumentFromResponseBody(body) {
+  if (getType(body) !== 'object' || getType(body.data) !== 'object') return {};
+
+  if (data.lookupType === 'document') {
+    return body.data;
+  } else if (
+    data.lookupType === 'query' &&
+    getType(body.data.items) === 'array' &&
+    getType(body.data.items[0]) === 'object'
+  ) {
+    return body.data.items[0];
+  }
+
+  return {};
+}
+
+function mapResponse(bodyString) {
+  const body = JSON.parse(bodyString || '{}');
+  const document = getDocumentFromResponseBody(body);
+  const storedData = document.data || {};
+
+  if (!data.documentPath) return storedData;
+
+  const keys = data.documentPath.trim().split('.');
+  let value = storedData;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (!value || !key) break;
+    value = value[key];
+  }
+  return value;
 }
 
 /*==============================================================================
