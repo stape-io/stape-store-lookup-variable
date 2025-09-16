@@ -29,11 +29,12 @@ return lookupInStore(data).then(mapResponse);
   Vendor related functions
 ==============================================================================*/
 
-function getStoreBaseUrl(data) {
+function getStapeStoreBaseUrl(data) {
   const containerIdentifier = getRequestHeader('x-gtm-identifier');
   const defaultDomain = getRequestHeader('x-gtm-default-domain');
   const containerApiKey = getRequestHeader('x-gtm-api-key');
-  const collectionPath = 'collections/' + enc(data.collectionName || 'default') + '/documents';
+  const collectionPath =
+    'collections/' + enc(data.stapeStoreCollectionName || 'default') + '/documents';
 
   return (
     'https://' +
@@ -47,8 +48,8 @@ function getStoreBaseUrl(data) {
   );
 }
 
-function getDocumentUrl(data, documentId) {
-  const storeBaseUrl = getStoreBaseUrl(data);
+function getStapeStoreDocumentUrl(data, documentId) {
+  const storeBaseUrl = getStapeStoreBaseUrl(data);
   return storeBaseUrl + '/' + enc(documentId);
 }
 
@@ -87,7 +88,9 @@ function getLookupByQueryBody(data) {
 
 function lookupInStore(data) {
   const url =
-    data.lookupType === 'document' ? getDocumentUrl(data, data.documentId) : getStoreBaseUrl(data);
+    data.lookupType === 'document'
+      ? getStapeStoreDocumentUrl(data, data.documentId)
+      : getStapeStoreBaseUrl(data);
   const options = getOptions(data);
   const body = data.lookupType === 'query' ? getLookupByQueryBody(data) : undefined;
   const bodyStrigified = body ? JSON.stringify(body) : undefined;
