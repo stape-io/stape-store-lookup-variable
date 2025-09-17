@@ -125,7 +125,8 @@ ___TEMPLATE_PARAMETERS___
             "type": "TEXT"
           }
         ],
-        "help": "\u003ca href\u003d\"https://postgrest.org/en/stable/references/api/tables_views.html#horizontal-filtering\"\u003eRead more\u003c/a\u003e"
+        "help": "\u003ca href\u003d\"https://stape.io/helpdesk/documentation/stape-store-feature#query-operators\"\u003eLearn more about the comparison operators\u003c/a\u003e.",
+        "displayName": "Query conditions"
       }
     ],
     "enablingConditions": [
@@ -146,7 +147,7 @@ ___TEMPLATE_PARAMETERS___
         "name": "documentPath",
         "displayName": "Key Path",
         "simpleValueType": true,
-        "help": "The path to the desired field within the specified document.\n\u003cbr/\u003e\u003cbr/\u003e\nFor example, if the specified document is\n\u003cbr/\u003e\n\u003ci\u003e{ key1: \"value1\" }\u003c/i\u003e\n\u003cbr/\u003e\nthen a Key Path of \u003ci\u003ekey1\u003c/i\u003e will return \u003ci\u003e\"value1\"\u003c/i\u003e."
+        "help": "The path to the desired field within the specified document. Use dot notation if needed (e.g. \u003ci\u003efoo.id\u003c/i\u003e, \u003ci\u003ebar.0.price\u003c/i\u003e).\n\u003cbr/\u003e\u003cbr/\u003e\nFor example, if the specified document is\n\u003cbr/\u003e\n\u003ci\u003e{ key1: \"value1\" }\u003c/i\u003e\n\u003cbr/\u003e\nthen a Key Path of \u003ci\u003ekey1\u003c/i\u003e will return \u003ci\u003e\"value1\"\u003c/i\u003e."
       },
       {
         "type": "CHECKBOX",
