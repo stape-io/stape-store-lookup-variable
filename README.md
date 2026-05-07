@@ -21,3 +21,6 @@ This is useful for retrieving user data, product information, or any other data 
 ## Open Source
 
 The **Stape Store Lookup Variable for Google Tag Manager Server Container** is developed and maintained by [Stape Team](https://stape.io/) under the Apache 2.0 license.
+
+### GTM Gallery Status
+🟢 [Listed](https://tagmanager.google.com/gallery/#/owners/stape-io/templates/stape-store-lookup-variable)
