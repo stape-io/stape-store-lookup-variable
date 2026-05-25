@@ -1,6 +1,8 @@
 homepage: 'https://stape.io/'
 documentation: 'https://github.com/stape-io/stape-store-lookup-variable'
 versions:
+  - sha: 8bffabcdc93765a5e878b46d2bad28fbae1d4802
+    changeNotes: Console and BigQuery logging removal.
   - sha: 67b3fc88d9ada068ff1cebda9cafe62ea63a4570
     changeNotes: Added Stape Store 2.0 support. Added BigQuery logging support.
   - sha: ebb5ccc3ad85d5fcf075e2151ddc1e319f72ea1d
