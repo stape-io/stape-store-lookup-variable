@@ -10,7 +10,7 @@ This is useful for retrieving user data, product information, or any other data 
 2.  Select a **Lookup Type**:
     - **Document ID**: Provide the unique key of the document you want to retrieve.
     - **Query**: Specify conditions to search for a document. The first match is returned.
-3.  (Optional) Provide a **Key Path** (e.g., `user.address.city`) to retrieve a specific nested value from the document. If left empty, the entire document data is returned.
+3.  (Optional) Provide a **Property To Return** (e.g., `user.address.city`) to retrieve a specific nested value from the document. If left empty, the entire document data is returned.
 4.  (Optional) Enable **Store the result in cache** to improve performance by caching the response.
 5.  (Optional) Specify a **Stape Store Collection Name**. Defaults to `default`.
 6.  Use the variable in your tags, triggers, or other variables.

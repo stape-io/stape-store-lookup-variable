@@ -1,7 +1,9 @@
 const encodeUriComponent = require('encodeUriComponent');
 const getRequestHeader = require('getRequestHeader');
+const getTimestampMillis = require('getTimestampMillis');
 const getType = require('getType');
 const JSON = require('JSON');
+const makeInteger = require('makeInteger');
 const makeString = require('makeString');
 const Promise = require('Promise');
 const sendHttpRequest = require('sendHttpRequest');
@@ -15,7 +17,9 @@ if (data.lookupType === 'document' && !data.documentId) {
   return null;
 }
 
-return lookupInStore(data).then(mapResponse);
+return lookupInStore(data).then((bodyString) => {
+  return bodyString ? mapResponse(bodyString) : {};
+});
 
 /*==============================================================================
   Vendor related functions
@@ -57,12 +61,13 @@ function getStapeStoreBaseUrl(data) {
   );
 }
 
-function getStapeStoreDocumentUrl(data, documentId) {
+function generateRequestUrl(data) {
   const storeBaseUrl = getStapeStoreBaseUrl(data);
-  return storeBaseUrl + '/' + enc(documentId);
+  if (data.lookupType === 'document') return storeBaseUrl + '/' + enc(data.documentId);
+  return storeBaseUrl;
 }
 
-function getOptions(data) {
+function generateRequestOptions(data) {
   const optionsByLookupType = {
     document: { method: 'GET' },
     query: { method: 'POST', headers: { 'Content-Type': 'application/json' } }
@@ -71,7 +76,7 @@ function getOptions(data) {
   return optionsByLookupType[data.lookupType];
 }
 
-function getLookupByQueryBody(data) {
+function generateQueryLookupBody(data) {
   const filterConditions = [];
 
   if (data.queryConditions) {
@@ -96,24 +101,45 @@ function getLookupByQueryBody(data) {
 }
 
 function lookupInStore(data) {
-  const url =
-    data.lookupType === 'document'
-      ? getStapeStoreDocumentUrl(data, data.documentId)
-      : getStapeStoreBaseUrl(data);
-  const options = getOptions(data);
-  const body = data.lookupType === 'query' ? getLookupByQueryBody(data) : undefined;
+  const url = generateRequestUrl(data);
+  const options = generateRequestOptions(data);
+  const body = data.lookupType === 'query' ? generateQueryLookupBody(data) : undefined;
   const bodyStrigified = body ? JSON.stringify(body) : undefined;
-  const cacheKey = data.storeResponse ? sha256Sync(url + bodyStrigified || '') : '';
+  const cacheKey = data.storeResponse ? sha256Sync(url + (bodyStrigified || '')) : undefined;
 
   if (data.storeResponse) {
     const cachedValue = templateDataStorage.getItemCopy(cacheKey);
-    if (cachedValue) return Promise.create((resolve) => resolve(cachedValue));
+    if (
+      getType(cachedValue) === 'object' &&
+      cachedValue.resultBodyString &&
+      cachedValue.expiresAt
+    ) {
+      if (getTimestampMillis() < cachedValue.expiresAt) {
+        return Promise.create((resolve) => resolve(cachedValue.resultBodyString));
+      }
+    }
   }
 
-  return sendHttpRequest(url, options, bodyStrigified).then((response) => {
-    if (data.storeResponse) templateDataStorage.setItemCopy(cacheKey, response.body);
-    return response.body;
-  });
+  return sendHttpRequest(url, options, bodyStrigified)
+    .then((result) => {
+      const resultBodyString = result.body;
+      const parsedBody = JSON.parse(resultBodyString || '{}');
+      if (result.statusCode === 200 && parsedBody.success) {
+        if (data.storeResponse) {
+          templateDataStorage.setItemCopy(cacheKey, {
+            resultBodyString: resultBodyString,
+            expiresAt:
+              getTimestampMillis() + makeInteger(data.cacheExpirationTime || 180) * 60 * 1000
+          });
+        }
+        return resultBodyString;
+      } else {
+        return null;
+      }
+    })
+    .catch(() => {
+      return null;
+    });
 }
 
 function getDocumentFromResponseBody(body) {
