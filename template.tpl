@@ -130,7 +130,8 @@ ___TEMPLATE_PARAMETERS___
           }
         ],
         "help": "\u003ca href\u003d\"https://stape.io/helpdesk/documentation/stape-store-feature#query-operators\"\u003eLearn more about the comparison operators\u003c/a\u003e.",
-        "displayName": "Query conditions"
+        "displayName": "Query conditions",
+        "newRowButtonText": "Add condition"
       }
     ],
     "enablingConditions": [
@@ -149,16 +150,40 @@ ___TEMPLATE_PARAMETERS___
       {
         "type": "TEXT",
         "name": "documentPath",
-        "displayName": "Key Path",
+        "displayName": "Property To Return",
         "simpleValueType": true,
-        "help": "The path to the desired field within the specified document. Use dot notation if needed (e.g. \u003ci\u003efoo.id\u003c/i\u003e, \u003ci\u003ebar.0.price\u003c/i\u003e).\n\u003cbr/\u003e\u003cbr/\u003e\nFor example, if the specified document is\n\u003cbr/\u003e\n\u003ci\u003e{ key1: \"value1\" }\u003c/i\u003e\n\u003cbr/\u003e\nthen a Key Path of \u003ci\u003ekey1\u003c/i\u003e will return \u003ci\u003e\"value1\"\u003c/i\u003e."
+        "help": "The path to the desired property within the specified document to be returned by the variable. Leave blank to return the whole document.\n\u003cbr/\u003e\u003cbr/\u003e\nUse dot notation if needed (e.g. \u003ci\u003efoo.id\u003c/i\u003e, \u003ci\u003ebar.0.price\u003c/i\u003e).\n\u003cbr/\u003e\nFor example, if the specified document is\n\u003cbr/\u003e\n\u003ci\u003e{ key1: \"value1\" }\u003c/i\u003e\n\u003cbr/\u003e\nthen a Key Path of \u003ci\u003ekey1\u003c/i\u003e will return \u003ci\u003e\"value1\"\u003c/i\u003e.",
+        "valueHint": "bar.0.price"
       },
       {
         "type": "CHECKBOX",
         "name": "storeResponse",
         "checkboxText": "Store the result in cache",
         "simpleValueType": true,
-        "help": "Store the response in Template Storage.  \n\u003cbr/\u003e\nIf a request is made with identical parameters, the cached response (if available) will be reused instead of sending a new request."
+        "help": "Store the response in Template Storage.  \n\u003cbr/\u003e\nIf a request is made with identical parameters, the cached response (if available) will be reused instead of sending a new request.",
+        "subParams": [
+          {
+            "type": "TEXT",
+            "name": "cacheExpirationTime",
+            "displayName": "Cache Expiration Time",
+            "simpleValueType": true,
+            "defaultValue": 180,
+            "enablingConditions": [
+              {
+                "paramName": "storeResponse",
+                "paramValue": true,
+                "type": "EQUALS"
+              }
+            ],
+            "help": "Defines how long data stays in cache before being retrieved again from the Stape Store.",
+            "valueValidators": [
+              {
+                "type": "POSITIVE_NUMBER"
+              }
+            ],
+            "valueUnit": "minutes"
+          }
+        ]
       }
     ],
     "displayName": "More Settings"
@@ -226,8 +251,10 @@ ___SANDBOXED_JS_FOR_SERVER___
 
 const encodeUriComponent = require('encodeUriComponent');
 const getRequestHeader = require('getRequestHeader');
+const getTimestampMillis = require('getTimestampMillis');
 const getType = require('getType');
 const JSON = require('JSON');
+const makeInteger = require('makeInteger');
 const makeString = require('makeString');
 const Promise = require('Promise');
 const sendHttpRequest = require('sendHttpRequest');
@@ -241,7 +268,9 @@ if (data.lookupType === 'document' && !data.documentId) {
   return null;
 }
 
-return lookupInStore(data).then(mapResponse);
+return lookupInStore(data).then((bodyString) => {
+  return bodyString ? mapResponse(bodyString) : {};
+});
 
 /*==============================================================================
   Vendor related functions
@@ -283,12 +312,13 @@ function getStapeStoreBaseUrl(data) {
   );
 }
 
-function getStapeStoreDocumentUrl(data, documentId) {
+function generateRequestUrl(data) {
   const storeBaseUrl = getStapeStoreBaseUrl(data);
-  return storeBaseUrl + '/' + enc(documentId);
+  if (data.lookupType === 'document') return storeBaseUrl + '/' + enc(data.documentId);
+  return storeBaseUrl;
 }
 
-function getOptions(data) {
+function generateRequestOptions(data) {
   const optionsByLookupType = {
     document: { method: 'GET' },
     query: { method: 'POST', headers: { 'Content-Type': 'application/json' } }
@@ -297,7 +327,7 @@ function getOptions(data) {
   return optionsByLookupType[data.lookupType];
 }
 
-function getLookupByQueryBody(data) {
+function generateQueryLookupBody(data) {
   const filterConditions = [];
 
   if (data.queryConditions) {
@@ -322,24 +352,45 @@ function getLookupByQueryBody(data) {
 }
 
 function lookupInStore(data) {
-  const url =
-    data.lookupType === 'document'
-      ? getStapeStoreDocumentUrl(data, data.documentId)
-      : getStapeStoreBaseUrl(data);
-  const options = getOptions(data);
-  const body = data.lookupType === 'query' ? getLookupByQueryBody(data) : undefined;
+  const url = generateRequestUrl(data);
+  const options = generateRequestOptions(data);
+  const body = data.lookupType === 'query' ? generateQueryLookupBody(data) : undefined;
   const bodyStrigified = body ? JSON.stringify(body) : undefined;
-  const cacheKey = data.storeResponse ? sha256Sync(url + bodyStrigified || '') : '';
+  const cacheKey = data.storeResponse ? sha256Sync(url + (bodyStrigified || '')) : undefined;
 
   if (data.storeResponse) {
     const cachedValue = templateDataStorage.getItemCopy(cacheKey);
-    if (cachedValue) return Promise.create((resolve) => resolve(cachedValue));
+    if (
+      getType(cachedValue) === 'object' &&
+      cachedValue.resultBodyString &&
+      cachedValue.expiresAt
+    ) {
+      if (getTimestampMillis() < cachedValue.expiresAt) {
+        return Promise.create((resolve) => resolve(cachedValue.resultBodyString));
+      }
+    }
   }
 
-  return sendHttpRequest(url, options, bodyStrigified).then((response) => {
-    if (data.storeResponse) templateDataStorage.setItemCopy(cacheKey, response.body);
-    return response.body;
-  });
+  return sendHttpRequest(url, options, bodyStrigified)
+    .then((result) => {
+      const resultBodyString = result.body;
+      const parsedBody = JSON.parse(resultBodyString || '{}');
+      if (result.statusCode === 200 && parsedBody.success) {
+        if (data.storeResponse) {
+          templateDataStorage.setItemCopy(cacheKey, {
+            resultBodyString: resultBodyString,
+            expiresAt:
+              getTimestampMillis() + makeInteger(data.cacheExpirationTime || 180) * 60 * 1000
+          });
+        }
+        return resultBodyString;
+      } else {
+        return null;
+      }
+    })
+    .catch(() => {
+      return null;
+    });
 }
 
 function getDocumentFromResponseBody(body) {
@@ -528,8 +579,10 @@ scenarios: []
 
 ___NOTES___
 
+2026-07-02 Change Notes:
+ - Add cache expiration and improve cache mechanism.
+
 2026-05-21 Change Notes:
  - Console and BigQuery logging removal.
 
 Created on 24/01/2024, 14:06:55
-

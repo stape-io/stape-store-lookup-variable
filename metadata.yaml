@@ -1,6 +1,8 @@
 homepage: 'https://stape.io/'
 documentation: 'https://github.com/stape-io/stape-store-lookup-variable'
 versions:
+  - sha: 5497dfb065edcf694063262fcd5c4118963589bd
+    changeNotes: Add cache expiration and improve cache mechanism.
   - sha: 8bffabcdc93765a5e878b46d2bad28fbae1d4802
     changeNotes: Console and BigQuery logging removal.
   - sha: 67b3fc88d9ada068ff1cebda9cafe62ea63a4570
