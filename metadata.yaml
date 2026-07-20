@@ -1,6 +1,8 @@
 homepage: 'https://stape.io/'
 documentation: 'https://github.com/stape-io/stape-store-lookup-variable'
 versions:
+  - sha: 585fbc044effe8bb69920d911a6edf99c9adbaf1
+    changeNotes: Revert the return value to the old behavior for not found Document ID or path in Document. Add unit tests.
   - sha: 5497dfb065edcf694063262fcd5c4118963589bd
     changeNotes: Add cache expiration and improve cache mechanism.
   - sha: 8bffabcdc93765a5e878b46d2bad28fbae1d4802
