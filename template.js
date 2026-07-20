@@ -17,9 +17,7 @@ if (data.lookupType === 'document' && !data.documentId) {
   return null;
 }
 
-return lookupInStore(data).then((bodyString) => {
-  return bodyString ? mapResponse(bodyString) : {};
-});
+return lookupInStore(data).then(mapResponse);
 
 /*==============================================================================
   Vendor related functions

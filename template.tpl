@@ -268,9 +268,7 @@ if (data.lookupType === 'document' && !data.documentId) {
   return null;
 }
 
-return lookupInStore(data).then((bodyString) => {
-  return bodyString ? mapResponse(bodyString) : {};
-});
+return lookupInStore(data).then(mapResponse);
 
 /*==============================================================================
   Vendor related functions
@@ -574,10 +572,437 @@ ___SERVER_PERMISSIONS___
 
 ___TESTS___
 
-scenarios: []
+scenarios:
+- name: '[Early Exit] Document lookup without a Document ID returns null and does
+    not send a request'
+  code: |-
+    const copyMockData = setAllMockData({ documentId: undefined });
+
+    const variableResult = runCode(copyMockData);
+
+    assertApi('sendHttpRequest').wasNotCalled();
+    assertThat(variableResult).isNull();
+- name: '[Document Lookup] Sends a GET request to the correct URL built from request
+    headers'
+  code: |-
+    const copyMockData = setAllMockData();
+
+    mock('sendHttpRequest', (url, options, body) => {
+      assertThat(url).isEqualTo(EXPECTED_BASE_URL + '/doc123');
+      assertThat(options).isEqualTo({ method: 'GET' });
+      assertThat(body).isUndefined();
+      return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) }));
+    });
+
+    runCode(copyMockData);
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Document Lookup] Uses a custom Stape Store Collection Name in the URL when
+    provided'
+  code: |-
+    const copyMockData = setAllMockData({ stapeStoreCollectionName: 'customCollection' });
+
+    mock('sendHttpRequest', (url) => {
+      assertThat(url).isEqualTo('https://expectedXGtmIdentifier.expectedXGtmDefaultDomain/stape-api/expectedXGtmApiKey/v2/store/collections/customCollection/documents/doc123');
+      return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) }));
+    });
+
+    runCode(copyMockData);
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Different Stape Store] Builds the URL using the provided Container API Key
+    parts'
+  code: |-
+    [true, 'true'].forEach((flagValue) => {
+      const copyMockData = setAllMockData({
+        useDifferentStapeStore: flagValue,
+        stapeStoreContainerApiKey: 'eu:myContainer:myApiKey:io'
+      });
+
+      mock('sendHttpRequest', (url) => {
+        assertThat(url).isEqualTo('https://myContainer.eu.stape.io/stape-api/myApiKey/v2/store/collections/default/documents/doc123');
+        return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) }));
+      });
+
+      runCode(copyMockData);
+    });
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Different Stape Store] Falls back to default region io when Container API
+    Key has no region part'
+  code: |-
+    const copyMockData = setAllMockData({
+      useDifferentStapeStore: true,
+      stapeStoreContainerApiKey: 'eu:myContainer:myApiKey'
+    });
+
+    mock('sendHttpRequest', (url) => {
+      assertThat(url).isEqualTo('https://myContainer.eu.stape.io/stape-api/myApiKey/v2/store/collections/default/documents/doc123');
+      return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) }));
+    });
+
+    runCode(copyMockData);
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Different Stape Store] Falls back to request headers when Container API
+    Key is not a valid string'
+  code: |-
+    [undefined, 123].forEach((invalidApiKey) => {
+      const copyMockData = setAllMockData({
+        useDifferentStapeStore: true,
+        stapeStoreContainerApiKey: invalidApiKey
+      });
+
+      mock('sendHttpRequest', (url) => {
+        assertThat(url).isEqualTo(EXPECTED_BASE_URL + '/doc123');
+        return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) }));
+      });
+
+      runCode(copyMockData);
+    });
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Query Lookup] Sends a POST request with URL, headers and body built from
+    Query Conditions'
+  code: |-
+    const copyMockData = setAllMockData({
+      lookupType: 'query',
+      documentId: undefined,
+      queryConditions: [
+        { field: 'foo', operator: 'equal', value: 'bar' },
+        { field: 'baz', operator: 'gt', value: '1' }
+      ]
+    });
+
+    mock('sendHttpRequest', (url, options, body) => {
+      assertThat(url).isEqualTo(EXPECTED_BASE_URL);
+      assertThat(options).isEqualTo({ method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      assertThat(body).isEqualTo(JSON.stringify({
+        filter: {
+          operator: 'and',
+          conditions: [
+            { field: 'foo', operator: 'equal', value: 'bar' },
+            { field: 'baz', operator: 'gt', value: '1' }
+          ]
+        },
+        pagination: { limit: 1 }
+      }));
+      return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ items: [] }) }));
+    });
+
+    runCode(copyMockData);
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Query Lookup] Sends an empty conditions filter when no Query Conditions
+    are provided'
+  code: |-
+    const copyMockData = setAllMockData({ lookupType: 'query', documentId: undefined, queryConditions: undefined });
+
+    mock('sendHttpRequest', (url, options, body) => {
+      assertThat(body).isEqualTo(JSON.stringify({
+        filter: { operator: 'and', conditions: [] },
+        pagination: { limit: 1 }
+      }));
+      return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ items: [] }) }));
+    });
+
+    runCode(copyMockData);
+
+    assertApi('sendHttpRequest').wasCalled();
+- name: '[Response Mapping] Returns the whole document data when Property To Return
+    is empty'
+  code: |-
+    const copyMockData = setAllMockData({ documentPath: '' });
+
+    mock('sendHttpRequest', () => {
+      return Promise.create((resolve) => resolve({
+        statusCode: 200,
+        body: buildSuccessBody({ id: 'doc123', data: { key1: 'value1', nested: { a: 1 } } })
+      }));
+    });
+
+    runCode(copyMockData).then((variableResult) => {
+      assertThat(variableResult).isEqualTo({ key1: 'value1', nested: { a: 1 } });
+    });
+- name: '[Response Mapping] Returns nested value using dot notation or undefined when
+    the path does not exist'
+  code: |-
+    [
+      { documentPath: 'nested.a', expected: 1 },
+      { documentPath: 'foo.bar', expected: undefined }
+    ].forEach((scenario) => {
+      const copyMockData = setAllMockData({ documentPath: scenario.documentPath });
+
+      mock('sendHttpRequest', () => {
+        return Promise.create((resolve) => resolve({
+          statusCode: 200,
+          body: buildSuccessBody({ data: { key1: 'value1', nested: { a: 1 } } })
+        }));
+      });
+
+      runCode(copyMockData).then((variableResult) => {
+        if (getType(scenario.expected) === 'undefined') {
+          assertThat(variableResult).isUndefined();
+        } else {
+          assertThat(variableResult).isEqualTo(scenario.expected);
+        }
+      });
+    });
+- name: '[Response Mapping] Uses the first item from the Query Lookup results'
+  code: |-
+    const copyMockData = setAllMockData({ lookupType: 'query', documentId: undefined, documentPath: 'k' });
+
+    mock('sendHttpRequest', () => {
+      return Promise.create((resolve) => resolve({
+        statusCode: 200,
+        body: buildSuccessBody({ items: [{ id: 'd1', data: { k: 'v1' } }, { id: 'd2', data: { k: 'v2' } }] })
+      }));
+    });
+
+    runCode(copyMockData).then((variableResult) => {
+      assertThat(variableResult).isEqualTo('v1');
+    });
+- name: '[Response Mapping] Returns an empty object when the Query Lookup finds no
+    matching items'
+  code: |-
+    [
+      { items: [] },
+      { items: undefined },
+      { items: ['not-an-object'] }
+    ].forEach((scenario) => {
+      const copyMockData = setAllMockData({ lookupType: 'query', documentId: undefined, documentPath: '' });
+
+      mock('sendHttpRequest', () => {
+        return Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody(scenario) }));
+      });
+
+      runCode(copyMockData).then((variableResult) => {
+        assertThat(variableResult).isEqualTo({});
+      });
+    });
+- name: '[Failure] Returns an empty object when the response is unsuccessful, the
+    status code is not 200, or the request fails'
+  code: |-
+    [
+      { description: 'success is false', mockResponse: () => Promise.create((resolve) => resolve({ statusCode: 200, body: JSON.stringify({ success: false }) })) },
+      { description: 'status code is not 200', mockResponse: () => Promise.create((resolve) => resolve({ statusCode: 404, body: buildSuccessBody({ data: { key1: 'value1' } }) })) },
+      { description: 'request fails or times out', mockResponse: () => Promise.create((resolve, reject) => reject({ reason: 'timed out' })) }
+    ].forEach((scenario) => {
+      const copyMockData = setAllMockData();
+
+      mock('sendHttpRequest', scenario.mockResponse);
+
+      runCode(copyMockData).then((variableResult) => {
+        assertThat(variableResult).isEqualTo({});
+      });
+    });
+- name: '[Response Mapping] Returns undefined when Property To Return is set but the
+    document was not found or the property does not exist in it'
+  code: |-
+    [
+      { description: 'document does not exist (success is false)', mockResponse: () => Promise.create((resolve) => resolve({ statusCode: 200, body: JSON.stringify({ success: false }) })) },
+      { description: 'document does not exist (status code is not 200)', mockResponse: () => Promise.create((resolve) => resolve({ statusCode: 404, body: buildSuccessBody({ data: { key1: 'value1' } }) })) },
+      { description: 'document does not exist (request fails or times out)', mockResponse: () => Promise.create((resolve, reject) => reject({ reason: 'timed out' })) },
+      { description: 'document exists but the property is missing', mockResponse: () => Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: { key1: 'value1' } }) })) }
+    ].forEach((scenario) => {
+      const copyMockData = setAllMockData({ documentPath: 'foo.bar' });
+
+      mock('sendHttpRequest', scenario.mockResponse);
+
+      runCode(copyMockData).then((variableResult) => {
+        assertThat(variableResult).isUndefined();
+      });
+    });
+- name: '[Cache] Does not interact with the cache when storing the result in cache
+    is disabled'
+  code: |-
+    const copyMockData = setAllMockData({ storeResponse: false });
+
+    let getItemCopyWasCalled = false;
+    let setItemCopyWasCalled = false;
+    mockObject('templateDataStorage', {
+      getItemCopy: () => { getItemCopyWasCalled = true; },
+      setItemCopy: () => { setItemCopyWasCalled = true; }
+    });
+
+    mock('sendHttpRequest', () => Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) })));
+
+    runCode(copyMockData);
+
+    callLater(() => {
+      assertThat(getItemCopyWasCalled).isFalse();
+      assertThat(setItemCopyWasCalled).isFalse();
+      assertApi('sendHttpRequest').wasCalled();
+    });
+- name: '[Cache] Sends a request and stores the response in cache when the cache is
+    empty'
+  code: |-
+    const copyMockData = setAllMockData({ storeResponse: true, cacheExpirationTime: '5' });
+
+    const EXPECTED_CACHE_KEY = 'HASH:' + EXPECTED_BASE_URL + '/doc123';
+    const responseBody = buildSuccessBody({ data: {} });
+
+    let getItemCopyWasCalled = false;
+    let setItemCopyWasCalled = false;
+    mockObject('templateDataStorage', {
+      getItemCopy: (key) => {
+        getItemCopyWasCalled = true;
+        assertThat(key).isEqualTo(EXPECTED_CACHE_KEY);
+        return undefined;
+      },
+      setItemCopy: (key, value) => {
+        setItemCopyWasCalled = true;
+        assertThat(key).isEqualTo(EXPECTED_CACHE_KEY);
+        assertThat(value).isEqualTo({ resultBodyString: responseBody, expiresAt: NOW + 5 * 60 * 1000 });
+      }
+    });
+
+    mock('sendHttpRequest', () => Promise.create((resolve) => resolve({ statusCode: 200, body: responseBody })));
+
+    runCode(copyMockData);
+
+    callLater(() => {
+      assertThat(getItemCopyWasCalled).isTrue();
+      assertThat(setItemCopyWasCalled).isTrue();
+    });
+- name: '[Cache] Reuses the cached response without sending a new request when the
+    cache is still valid'
+  code: |-
+    const copyMockData = setAllMockData({ storeResponse: true, documentPath: '' });
+
+    const cachedDocumentData = { key1: 'cachedValue' };
+    const cachedResultBodyString = buildSuccessBody({ data: cachedDocumentData });
+
+    let setItemCopyWasCalled = false;
+    mockObject('templateDataStorage', {
+      getItemCopy: () => {
+        return { resultBodyString: cachedResultBodyString, expiresAt: NOW + 1000 };
+      },
+      setItemCopy: () => { setItemCopyWasCalled = true; }
+    });
+
+    runCode(copyMockData).then((variableResult) => {
+      assertThat(variableResult).isEqualTo(cachedDocumentData);
+    });
+
+    callLater(() => {
+      assertThat(setItemCopyWasCalled).isFalse();
+      assertApi('sendHttpRequest').wasNotCalled();
+    });
+- name: '[Cache] Sends a new request and updates the cache when the cached response
+    has expired'
+  code: |-
+    const copyMockData = setAllMockData({ storeResponse: true });
+
+    const responseBody = buildSuccessBody({ data: {} });
+
+    let setItemCopyWasCalled = false;
+    mockObject('templateDataStorage', {
+      getItemCopy: () => {
+        return { resultBodyString: 'stale', expiresAt: NOW - 1 };
+      },
+      setItemCopy: () => { setItemCopyWasCalled = true; }
+    });
+
+    mock('sendHttpRequest', () => Promise.create((resolve) => resolve({ statusCode: 200, body: responseBody })));
+
+    runCode(copyMockData);
+
+    callLater(() => {
+      assertThat(setItemCopyWasCalled).isTrue();
+      assertApi('sendHttpRequest').wasCalled();
+    });
+- name: '[Cache] Sends a new request when the cached value has an invalid shape'
+  code: |-
+    [
+      { description: 'missing resultBodyString', cachedValue: { expiresAt: NOW + 1000 } },
+      { description: 'missing expiresAt', cachedValue: { resultBodyString: 'x' } },
+      { description: 'not an object', cachedValue: 'invalid' }
+    ].forEach((scenario) => {
+      const copyMockData = setAllMockData({ storeResponse: true });
+
+      mockObject('templateDataStorage', {
+        getItemCopy: () => scenario.cachedValue,
+        setItemCopy: () => {}
+      });
+
+      mock('sendHttpRequest', () => Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) })));
+
+      runCode(copyMockData);
+    });
+
+    callLater(() => {
+      assertApi('sendHttpRequest').wasCalled();
+    });
+- name: '[Cache] Falls back to the default 180 minute expiration when Cache Expiration
+    Time is not provided'
+  code: |-
+    const copyMockData = setAllMockData({ storeResponse: true, cacheExpirationTime: undefined });
+
+    let cachedExpiresAt;
+    mockObject('templateDataStorage', {
+      getItemCopy: () => undefined,
+      setItemCopy: (key, value) => { cachedExpiresAt = value.expiresAt; }
+    });
+
+    mock('sendHttpRequest', () => Promise.create((resolve) => resolve({ statusCode: 200, body: buildSuccessBody({ data: {} }) })));
+
+    runCode(copyMockData);
+
+    callLater(() => {
+      assertThat(cachedExpiresAt).isEqualTo(NOW + 180 * 60 * 1000);
+    });
+setup: |-
+  const JSON = require('JSON');
+  const Promise = require('Promise');
+  const callLater = require('callLater');
+  const getType = require('getType');
+
+  const assign = () => {
+    const target = arguments[0];
+    for (let i = 1; i < arguments.length; i++) {
+      for (let key in arguments[i]) {
+        target[key] = arguments[i][key];
+      }
+    }
+    return target;
+  };
+
+  mock('getRequestHeader', (header) => {
+    if (header === 'x-gtm-identifier') return 'expectedXGtmIdentifier';
+    else if (header === 'x-gtm-default-domain') return 'expectedXGtmDefaultDomain';
+    else if (header === 'x-gtm-api-key') return 'expectedXGtmApiKey';
+  });
+
+  mock('sha256Sync', (str) => 'HASH:' + str);
+
+  const NOW = 1747945830456;
+  mock('getTimestampMillis', NOW);
+
+  const EXPECTED_BASE_URL = 'https://expectedXGtmIdentifier.expectedXGtmDefaultDomain/stape-api/expectedXGtmApiKey/v2/store/collections/default/documents';
+
+  const buildSuccessBody = (dataPayload) => JSON.stringify({ success: true, data: dataPayload });
+
+  const mockData = {
+    lookupType: 'document',
+    documentId: 'doc123',
+    documentPath: '',
+    storeResponse: false,
+    cacheExpirationTime: '180',
+    stapeStoreCollectionName: 'default',
+    useDifferentStapeStore: false
+  };
+
+  const setAllMockData = (objToBeMerged) => {
+    return assign(JSON.parse(JSON.stringify(mockData)), objToBeMerged || {});
+  };
 
 
 ___NOTES___
+
+2026-07-20 Change Notes:
+ - Simplify response handling by letting mapResponse return the fallback value directly, removing the redundant ternary wrapper around lookupInStore's result.
+ - Add unit tests covering document/query lookup requests, different Stape Store configuration, response mapping (including missing documents/properties), failure handling, and the cache lifecycle.
 
 2026-07-02 Change Notes:
  - Add cache expiration and improve cache mechanism.
@@ -586,3 +1011,4 @@ ___NOTES___
  - Console and BigQuery logging removal.
 
 Created on 24/01/2024, 14:06:55
+
